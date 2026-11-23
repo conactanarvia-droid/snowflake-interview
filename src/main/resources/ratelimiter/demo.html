@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rate Limiter Live</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --text: #1a1e24; --muted: #5d6877; --border: #e2e5ea;
+    --ok: #1f9d55; --bad: #e0483e; --line: #1a1e24; --accent: #3b5bdb; --chip: #eef1f5; --grid: #eceff3;
+    --silver: #8a94a3; --gold: #c99a06; --platinum: #6f5bd6;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1115; --panel: #161a20; --text: #e5e8ed; --muted: #97a1af; --border: #282e37;
+      --ok: #3fbf7a; --bad: #ff6b5e; --line: #e5e8ed; --accent: #8098ff; --chip: #20262e; --grid: #222831;
+      --silver: #a9b2bf; --gold: #e2b52a; --platinum: #9d8cf0;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin-bottom: 18px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 10px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .conn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+  .dot.on { background: var(--ok); }
+  .kpis { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
+  .kpi b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .kpi span { font-size: 12px; color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  button, select, input { font: inherit; color: inherit; }
+  button { background: var(--chip); border: 1px solid var(--border); border-radius: 7px; padding: 6px 11px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .55; cursor: progress; }
+  input, select { background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px; }
+  input[type=number] { width: 84px; }
+  .scenarios { display: flex; flex-wrap: wrap; gap: 8px; }
+  .scenarios button { text-align: left; }
+  .scenarios button small { display: block; color: var(--muted); font-size: 11.5px; }
+  .scenarios button.primary small { color: #dfe5ff; }
+  .tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .tier { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .tier .name { font-weight: 650; min-width: 84px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .05em; padding: 2px 7px; border-radius: 999px; color: #fff; }
+  .b-SILVER { background: var(--silver); } .b-GOLD { background: var(--gold); } .b-PLATINUM { background: var(--platinum); }
+  .tier .rps { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .clients { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
+  @media (max-width: 420px) { .clients { grid-template-columns: 1fr; } }
+  .client-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .client-head .id { font-weight: 650; font-size: 15px; }
+  .client-head select { margin-left: auto; }
+  canvas { width: 100%; height: 170px; display: block; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 10px; }
+  .nums b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+  .nums span { font-size: 11.5px; color: var(--muted); }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .gauge { height: 8px; background: var(--grid); border-radius: 99px; overflow: hidden; margin-top: 4px; }
+  .gauge i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .25s; }
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .controls input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .presets button { padding: 3px 8px; font-size: 12px; }
+  .burst-result { font-size: 12.5px; color: var(--muted); margin-top: 8px; min-height: 18px; }
+  .add { display: flex; gap: 8px; margin-top: 12px; }
+  #log { max-height: 280px; overflow: auto; font-size: 13px; }
+  .entry { padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .entry:last-child { border-bottom: 0; }
+  .entry time { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 8px; }
+  .entry code { display: block; margin-top: 3px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+                background: var(--chip); padding: 4px 7px; border-radius: 5px; overflow-x: auto; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Rate limiter, live</h1>
+      <div class="sub">Token bucket, lazy refill · real HTTP traffic against <span id="svc">…</span></div>
+    </div>
+    <span class="conn"><span class="dot" id="dot"></span><span id="conn">connecting</span></span>
+    <div class="kpis">
+      <div class="kpi"><b id="k-allowed">0</b><span>allowed total</span></div>
+      <div class="kpi"><b id="k-rejected">0</b><span>rejected (429)</span></div>
+      <div class="kpi"><b id="k-buckets">0</b><span>active buckets</span></div>
+    </div>
+  </header>
+
+  <h2>Guided scenarios</h2>
+  <div class="scenarios" id="scenarios"></div>
+
+  <h2>Tier limits (change at runtime, no restart)</h2>
+  <div class="tiers" id="tiers"></div>
+
+  <h2>Clients</h2>
+  <div class="clients" id="clients"></div>
+  <div class="add">
+    <input id="new-id" placeholder="new client id" maxlength="256">
+    <button id="add-btn">Add client</button>
+  </div>
+
+  <h2>Event log</h2>
+  <div class="panel" id="log"><div class="sub">Actions and their equivalent curl commands appear here.</div></div>
+</main>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const TIERS = ['SILVER', 'GOLD', 'PLATINUM'];
+const DEFAULT_RPS = { SILVER: 50, GOLD: 100, PLATINUM: 1000 };
+let state = null;
+const cards = new Map();
+const tierRows = new Map();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const fmt = n => n.toLocaleString();
+
+// ---------- API ----------
+async function api(path) {
+  const r = await fetch(path, { method: 'POST' });
+  let body = {};
+  try { body = await r.json(); } catch (_) {}
+  if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+  return body;
+}
+const setLoad = (id, rps) => api(`/api/load?id=${encodeURIComponent(id)}&rps=${rps}`);
+async function assignTier(id, tier) {
+  await api(`/api/assign?id=${encodeURIComponent(id)}&tier=${tier}`);
+  log(`<b>${esc(id)}</b> moved to <span class="badge b-${tier}">${tier}</span>`,
+      `curl -X PUT '${svc()}/v1/admin/clients/${encodeURIComponent(id)}/tier?tier=${tier}'`);
+}
+async function updateTier(tier, rps) {
+  await api(`/api/tier-limit?tier=${tier}&rps=${rps}`);
+  log(`<span class="badge b-${tier}">${tier}</span> limit set to <b>${fmt(rps)} rps</b>; every client on it picks this up on its next request`,
+      `curl -X PUT '${svc()}/v1/admin/tiers/${tier}?rps=${rps}'`);
+}
+async function burst(id, n) {
+  const r = await api(`/api/burst?id=${encodeURIComponent(id)}&n=${n}`);
+  const c = clientState(id);
+  const text = `Burst of ${fmt(r.sent)} → <span class="ok">${fmt(r.allowed)} allowed</span>, ` +
+               `<span class="bad">${fmt(r.rejected)} rejected</span>` + (r.errors ? `, ${r.errors} errors` : '') +
+               (c ? ` (bucket capacity ${fmt(c.limit)})` : '');
+  const card = cards.get(id);
+  if (card) card.burstResult.innerHTML = text;
+  log(`<b>${esc(id)}</b>: ${text}`, `for i in $(seq ${n}); do curl -s -o /dev/null -w '%{http_code}\\n' -X POST -H 'X-Client-Id: ${id}' ${svc()}/v1/check & done | sort | uniq -c`);
+  return r;
+}
+const svc = () => state ? state.serviceUrl : 'http://localhost:8080';
+const clientState = id => state && state.clients.find(c => c.id === id);
+const esc = s => s.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+function log(html, curl) {
+  const box = $('#log');
+  if (box.firstElementChild && box.firstElementChild.classList.contains('sub')) box.innerHTML = '';
+  const e = document.createElement('div');
+  e.className = 'entry';
+  e.innerHTML = `<time>${new Date().toLocaleTimeString()}</time>${html}` + (curl ? `<code>${esc(curl)}</code>` : '');
+  box.prepend(e);
+}
+async function guard(fn) {
+  try { await fn(); } catch (err) { log(`<span class="bad">Error:</span> ${esc(err.message)}`); }
+}
+
+// ---------- scenarios ----------
+const scenarios = [
+  { title: '1 · Under the limit', hint: 'acme (SILVER 50) sends 30 rps', run: async () => {
+      await setLoad('acme', 30);
+      log('Scenario 1: <b>acme</b> (SILVER, 50 rps) offered 30 rps. Watch: every bar is fully green. Nothing is rejected.');
+  }},
+  { title: '2 · Overload', hint: 'acme sends 200 rps', run: async () => {
+      await setLoad('acme', 200);
+      log('Scenario 2: <b>acme</b> offered 200 rps against a 50 rps limit. Watch: green flattens exactly at the dashed limit line, and the excess turns red (HTTP 429).');
+  }},
+  { title: '3 · Burst', hint: '300 requests at once on idle globex', run: async () => {
+      await setLoad('globex', 0);
+      log('Scenario 3: letting <b>globex</b> (GOLD, 100) sit idle for 2s so its bucket is full…');
+      await sleep(2000);
+      await burst('globex', 300);
+      log('A full bucket absorbs one second of traffic (= its capacity) instantly; the rest are rejected. A few extra may pass because tokens keep refilling while the burst is in flight.');
+  }},
+  { title: '4 · Upgrade live', hint: 'acme SILVER → PLATINUM', run: async () => {
+      if ((clientState('acme')?.targetRps ?? 0) < 100) { await setLoad('acme', 200); log('Driving acme at 200 rps first…'); await sleep(4000); }
+      await assignTier('acme', 'PLATINUM');
+      log('Scenario 4: Watch acme: the red disappears on the next request. Same running process, no restart; only one map entry changed.');
+  }},
+  { title: '5 · Downgrade live', hint: 'initech PLATINUM → GOLD under 1500 rps', run: async () => {
+      if ((clientState('initech')?.targetRps ?? 0) < 1200) { await setLoad('initech', 1500); log('Driving initech at 1500 rps for a few seconds…'); await sleep(4000); }
+      await assignTier('initech', 'GOLD');
+      log('Scenario 5: Watch initech: allowed drops from 1000/s to 100/s. Its bucket was clamped to the new capacity, so it cannot keep its old 1000-token burst.');
+  }},
+  { title: '6 · Raise a tier limit', hint: 'GOLD 100 → 250 rps', run: async () => {
+      if ((clientState('globex')?.targetRps ?? 0) < 300) { await setLoad('globex', 400); log('Driving globex (GOLD) at 400 rps for a few seconds…'); await sleep(4000); }
+      await updateTier('GOLD', 250);
+      log('Scenario 6: Watch globex: the dashed line and the green rise to 250/s. Every GOLD client gets the new limit lazily on its next request; no job touches the buckets.');
+  }},
+  { title: 'Reset', hint: 'stop traffic, default tiers', run: async () => {
+      for (const c of state.clients) await setLoad(c.id, 0);
+      for (const t of TIERS) await api(`/api/tier-limit?tier=${t}&rps=${DEFAULT_RPS[t]}`);
+      await api('/api/assign?id=acme&tier=SILVER');
+      await api('/api/assign?id=globex&tier=GOLD');
+      await api('/api/assign?id=initech&tier=PLATINUM');
+      log('Reset: all traffic stopped, tier limits back to defaults, acme/globex/initech on SILVER/GOLD/PLATINUM.');
+  }},
+];
+for (const s of scenarios) {
+  const b = document.createElement('button');
+  if (s.title !== 'Reset') b.className = 'primary';
+  b.innerHTML = `${s.title}<small>${s.hint}</small>`;
+  b.onclick = async () => { b.disabled = true; await guard(s.run); b.disabled = false; };
+  $('#scenarios').append(b);
+}
+
+// ---------- tiers ----------
+function renderTiers() {
+  for (const t of state.tiers) {
+    let row = tierRows.get(t.tier);
+    if (!row) {
+      const el = document.createElement('div');
+      el.className = 'panel tier';
+      el.innerHTML = `<span class="name"><span class="badge b-${t.tier}">${t.tier}</span></span>
+        <span class="rps"></span>
+        <input type="number" min="1" max="100000" step="1">
+        <button>Apply</button>`;
+      const input = $('input', el);
+      $('button', el).onclick = () => guard(() => {
+        const v = parseInt(input.value, 10);
+        if (!(v > 0)) throw new Error('rps must be a positive number');
+        return updateTier(t.tier, v);
+      });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') $('button', el).click(); });
+      $('#tiers').append(el);
+      row = { el, input, rps: $('.rps', el) };
+      tierRows.set(t.tier, row);
+    }
+    const n = state.clients.filter(c => c.tier === t.tier).length;
+    row.rps.textContent = `${fmt(t.requestsPerSecond)} rps · ${n} client${n === 1 ? '' : 's'}`;
+    if (document.activeElement !== row.input) row.input.value = t.requestsPerSecond;
+  }
+}
+
+// ---------- clients ----------
+function makeCard(c) {
+  const el = document.createElement('div');
+  el.className = 'panel';
+  el.innerHTML = `
+    <div class="client-head">
+      <span class="id"></span><span class="badge"></span>
+      <select>${TIERS.map(t => `<option>${t}</option>`).join('')}</select>
+    </div>
+    <canvas></canvas>
+    <div class="legend"><span><i class="sw" style="background:var(--ok)"></i>allowed / s</span>
+      <span><i class="sw" style="background:var(--bad)"></i>rejected (429) / s</span>
+      <span>- - tier limit</span></div>
+    <div class="nums">
+      <div><b class="ok n-ok">0</b><span>allowed last sec</span></div>
+      <div><b class="bad n-bad">0</b><span>rejected last sec</span></div>
+      <div><b class="n-rem">–</b><span>tokens left</span><div class="gauge"><i></i></div></div>
+    </div>
+    <div class="controls">
+      <span class="sub">Offered load</span>
+      <input type="range" min="0" max="2000" step="10">
+      <input type="number" class="load-num" min="0" max="5000" step="10">
+      <span class="sub">rps</span>
+    </div>
+    <div class="presets"></div>
+    <div class="controls" style="margin-top:10px">
+      <button class="burst-btn">Burst</button>
+      <input type="number" class="burst-n" value="300" min="1" max="2000">
+      <span class="sub">requests at once</span>
+    </div>
+    <div class="burst-result"></div>`;
+  $('.id', el).textContent = c.id;
+  const card = {
+    el, badge: $('.badge', el), select: $('select', el), canvas: $('canvas', el),
+    ok: $('.n-ok', el), bad: $('.n-bad', el), rem: $('.n-rem', el), gauge: $('.gauge i', el),
+    range: $('input[type=range]', el), num: $('.load-num', el), burstResult: $('.burst-result', el),
+    editing: false,
+  };
+  card.select.onchange = () => guard(() => assignTier(c.id, card.select.value));
+  const commit = v => guard(async () => {
+    v = Math.max(0, Math.min(5000, parseInt(v, 10) || 0));
+    card.range.value = v; card.num.value = v;
+    await setLoad(c.id, v);
+    log(`<b>${esc(c.id)}</b> offered load set to <b>${fmt(v)} rps</b>`);
+  });
+  card.range.oninput = () => { card.editing = true; card.num.value = card.range.value; };
+  card.range.onchange = () => { card.editing = false; commit(card.range.value); };
+  card.num.onchange = () => commit(card.num.value);
+  for (const p of [0, 30, 80, 200, 400, 1500]) {
+    const b = document.createElement('button');
+    b.textContent = p === 0 ? 'stop' : `${p}`;
+    b.onclick = () => commit(p);
+    $('.presets', el).append(b);
+  }
+  $('.burst-btn', el).onclick = async e => {
+    e.target.disabled = true;
+    await guard(() => burst(c.id, Math.max(1, Math.min(2000, parseInt($('.burst-n', el).value, 10) || 300))));
+    e.target.disabled = false;
+  };
+  $('#clients').append(el);
+  cards.set(c.id, card);
+  return card;
+}
+
+function renderClients() {
+  for (const c of state.clients) {
+    const card = cards.get(c.id) || makeCard(c);
+    card.badge.className = `badge b-${c.tier}`;
+    card.badge.textContent = `${c.tier} · ${fmt(c.limit)} rps`;
+    if (document.activeElement !== card.select) card.select.value = c.tier;
+    if (!card.editing && document.activeElement !== card.num) { card.range.value = c.targetRps; card.num.value = c.targetRps; }
+    const lastA = c.allowed[c.allowed.length - 1], lastR = c.rejected[c.rejected.length - 1];
+    card.ok.textContent = fmt(lastA);
+    card.bad.textContent = fmt(lastR);
+    card.rem.textContent = c.remaining < 0 ? '–' : fmt(c.remaining);
+    card.gauge.style.width = c.remaining < 0 ? '0' : Math.min(100, 100 * c.remaining / c.limit) + '%';
+    drawChart(card.canvas, c.allowed, c.rejected, c.limit);
+  }
+}
+
+function niceCeil(v) {
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
+  return 10 * p;
+}
+
+function drawChart(canvas, allowed, rejected, limit) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const col = k => css.getPropertyValue(k).trim();
+  const padL = 44, padR = 6, padT = 10, padB = 18;
+  const cw = w - padL - padR, ch = h - padT - padB;
+  let maxTotal = 0;
+  for (let i = 0; i < allowed.length; i++) maxTotal = Math.max(maxTotal, allowed[i] + rejected[i]);
+  const yMax = niceCeil(Math.max(limit * 1.3, maxTotal * 1.08, 10));
+  const y = v => padT + ch - (v / yMax) * ch;
+
+  ctx.font = '11px -apple-system, system-ui, sans-serif';
+  ctx.fillStyle = col('--muted');
+  ctx.strokeStyle = col('--grid');
+  ctx.lineWidth = 1;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (const f of [0, 0.5, 1]) {
+    const v = yMax * f, yy = Math.round(y(v)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(w - padR, yy); ctx.stroke();
+    ctx.fillText(fmt(Math.round(v)), padL - 6, yy);
+  }
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left'; ctx.fillText('−60s', padL, h - 4);
+  ctx.textAlign = 'right'; ctx.fillText('now', w - padR, h - 4);
+
+  const n = allowed.length, bw = cw / n, gap = bw > 4 ? 1 : 0;
+  for (let i = 0; i < n; i++) {
+    const x = padL + i * bw;
+    const ah = (allowed[i] / yMax) * ch, rh = (rejected[i] / yMax) * ch;
+    ctx.fillStyle = col('--ok');
+    ctx.fillRect(x + gap / 2, padT + ch - ah, bw - gap, ah);
+    ctx.fillStyle = col('--bad');
+    ctx.fillRect(x + gap / 2, padT + ch - ah - rh, bw - gap, rh);
+  }
+
+  const ly = Math.round(y(limit)) + 0.5;
+  ctx.strokeStyle = col('--line'); ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+  ctx.beginPath(); ctx.moveTo(padL, ly); ctx.lineTo(w - padR, ly); ctx.stroke();
+  ctx.setLineDash([]);
+  const label = `limit ${fmt(limit)}/s`;
+  ctx.font = '600 11px -apple-system, system-ui, sans-serif';
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = col('--panel');
+  ctx.fillRect(padL + 4, ly - 15, tw + 8, 13);
+  ctx.fillStyle = col('--text'); ctx.textAlign = 'left';
+  ctx.fillText(label, padL + 8, ly - 5);
+}
+
+// ---------- polling ----------
+async function poll() {
+  try {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    state = await r.json();
+    $('#dot').classList.add('on'); $('#conn').textContent = 'live';
+    $('#svc').textContent = state.serviceUrl;
+    $('#k-allowed').textContent = fmt(state.stats.allowed);
+    $('#k-rejected').textContent = fmt(state.stats.rejected);
+    $('#k-buckets').textContent = fmt(state.stats.activeBuckets);
+    renderTiers();
+    renderClients();
+  } catch (e) {
+    $('#dot').classList.remove('on'); $('#conn').textContent = 'disconnected: is Demo running?';
+  }
+}
+setInterval(poll, 500);
+poll();
+window.addEventListener('resize', () => state && renderClients());
+
+$('#add-btn').onclick = () => guard(async () => {
+  const id = $('#new-id').value.trim();
+  if (!id) throw new Error('enter a client id');
+  await api(`/api/clients?id=${encodeURIComponent(id)}`);
+  $('#new-id').value = '';
+  log(`Added client <b>${esc(id)}</b>. New clients start on SILVER with a full bucket.`);
+  await poll();
+});
+$('#new-id').addEventListener('keydown', e => { if (e.key === 'Enter') $('#add-btn').click(); });
+</script>
+</body>
+</html>
